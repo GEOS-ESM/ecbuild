@@ -95,8 +95,10 @@ endif()
 
 # RPATH settings on macOS do not affect "install_name"
 # FTM, keep old behavior -- need to test if new behavior impacts binaries in build directory
+# MAT: Updated to prevent warning when building with CMake 3.17. Tested on macOS Catalina with
+#      and without the change and binaries ran and were zero-diff.
 if( POLICY CMP0068 )
-    cmake_policy( SET CMP0068 OLD )
+    cmake_policy( SET CMP0068 NEW )
 endif()
 
 # find packages use <package>_ROOT by default
