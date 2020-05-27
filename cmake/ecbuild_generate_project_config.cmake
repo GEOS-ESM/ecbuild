@@ -55,7 +55,6 @@ function(ecbuild_generate_project_config template)
   if(NOT _PAR_FILENAME)
     string (TOLOWER ${PROJECT_NAME} LNAME)
 #    set( LNAME ${PROJECT_NAME_LOWCASE} )
-message("TLC: LNAME? <${LNAME}>")
     set(_PAR_FILENAME "${LNAME}-config.cmake")
   endif()
 
@@ -83,6 +82,5 @@ message("TLC: LNAME? <${LNAME}>")
     INSTALL_DESTINATION ${INSTALL_CMAKE_DIR}
     PATH_VARS BASE_DIR CMAKE_DIR ${PATH_VARS}
   )
-message("TLC: filename ${_PAR_FILENAME}")
 install(FILES "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_PAR_FILENAME}" DESTINATION "${INSTALL_CMAKE_DIR}")
 endfunction()
