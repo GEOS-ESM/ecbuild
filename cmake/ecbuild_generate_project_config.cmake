@@ -53,8 +53,8 @@ function(ecbuild_generate_project_config template)
   endif()
 
   if(NOT _PAR_FILENAME)
-    string (TOLOWER ${PROJECT_NAME} LNAME)
 #    set( LNAME ${PROJECT_NAME_LOWCASE} )
+    string (TOLOWER ${PROJECT_NAME} LNAME)
     set(_PAR_FILENAME "${LNAME}-config.cmake")
   endif()
 
