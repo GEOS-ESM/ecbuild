@@ -276,7 +276,6 @@ macro( ecbuild_install_project )
         endif()
 
         # Generate the <project>-config.cmake
-	message("TLC: project <${PROJECT_NAME}> template <${_template_config}>")
         ecbuild_generate_project_config("${_template_config}")
 
         if(ECBUILD_2_COMPAT)
