@@ -87,7 +87,7 @@ foreach( _comp ${${CMAKE_FIND_PACKAGE_NAME}_FIND_COMPONENTS} )
   set( _arg_${_COMP} ${_comp} )
   list( APPEND _search_components ${_name_${_COMP}} )
   if( NOT _name_${_COMP} )
-    ecbuild_error( "Find${CMAKE_FIND_PACKAGE_NAME}: COMPONENT ${_comp} is not a valid component. Valid components: ${_possible_components}" )
+    message(SEND_ERROR "Find${CMAKE_FIND_PACKAGE_NAME}: COMPONENT ${_comp} is not a valid component. Valid components: ${_possible_components}" )
   endif()
 endforeach()
 list( REMOVE_DUPLICATES _search_components )
@@ -125,7 +125,7 @@ foreach( _comp IN LISTS _search_components )
     PATH_SUFFIXES include include/netcdf
   )
   mark_as_advanced(NetCDF_${_comp}_INCLUDE_FILE)
-  ecbuild_debug("NetCDF_${_comp}_INCLUDE_FILE: ${NetCDF_${_comp}_INCLUDE_FILE}")
+  message(DEBUG "NetCDF_${_comp}_INCLUDE_FILE: ${NetCDF_${_comp}_INCLUDE_FILE}")
   if( NetCDF_${_comp}_INCLUDE_FILE )
     get_filename_component(NetCDF_${_comp}_INCLUDE_FILE ${NetCDF_${_comp}_INCLUDE_FILE} ABSOLUTE)
     get_filename_component(NetCDF_${_comp}_INCLUDE_DIR ${NetCDF_${_comp}_INCLUDE_FILE} DIRECTORY)
@@ -148,10 +148,10 @@ foreach( _comp IN LISTS _search_components )
   endif()
   find_program( NetCDF_${_comp}_CONFIG_EXECUTABLE
       NAMES n${_conf}-config
-      HINTS ${NetCDF_INCLUDE_DIRS} ${_include_search_hints} ${_search_hints}
-      PATH_SUFFIXES bin Bin ../bin ../../bin
+    HINTS ${NetCDF_INCLUDE_DIRS} ${_include_search_hints} ${_search_hints}
+    PATH_SUFFIXES bin Bin ../bin ../../bin
       DOC "NetCDF n${_conf}-config helper" )
-    ecbuild_debug("NetCDF_${_comp}_CONFIG_EXECUTABLE: ${NetCDF_${_comp}_CONFIG_EXECUTABLE}")
+    message(DEBUG "NetCDF_${_comp}_CONFIG_EXECUTABLE: ${NetCDF_${_comp}_CONFIG_EXECUTABLE}")
 endforeach()
 
 set(_C_libs_flag --libs)
@@ -171,6 +171,21 @@ function(netcdf_config exec flag output_var)
   endif()
 endfunction()
 
+## Detect additional package properties
+netcdf_config(${NetCDF_C_CONFIG_EXECUTABLE} --has-parallel4 _val)
+if( NOT _val MATCHES "^(yes|no)$" )
+  netcdf_config(${NetCDF_C_CONFIG_EXECUTABLE} --has-parallel _val)
+endif()
+if( _val MATCHES "^(yes)$" )
+  set(NetCDF_PARALLEL TRUE CACHE STRING "NetCDF has parallel IO capability via pnetcdf or hdf5." FORCE)
+else()
+  set(NetCDF_PARALLEL FALSE CACHE STRING "NetCDF has no parallel IO capability." FORCE)
+endif()
+
+if(NetCDF_PARALLEL)
+  find_package(MPI)
+endif()
+
 ## Find libraries for each component
 set( NetCDF_LIBRARIES )
 foreach( _comp IN LISTS _search_components )
@@ -184,8 +199,7 @@ foreach( _comp IN LISTS _search_components )
   mark_as_advanced( NetCDF_${_comp}_LIBRARY )
   get_filename_component(NetCDF_${_comp}_LIBRARY ${NetCDF_${_comp}_LIBRARY} ABSOLUTE)
   set(NetCDF_${_comp}_LIBRARY ${NetCDF_${_comp}_LIBRARY} CACHE STRING "NetCDF ${_comp} library" FORCE)
-  ecbuild_debug("NetCDF_${_comp}_LIBRARY: ${NetCDF_${_comp}_LIBRARY}")
-
+  message(DEBUG "NetCDF_${_comp}_LIBRARY: ${NetCDF_${_comp}_LIBRARY}")
 
   if( NetCDF_${_comp}_LIBRARY )
     if( NetCDF_${_comp}_LIBRARY MATCHES ".a$" )
@@ -229,6 +243,12 @@ foreach( _comp IN LISTS _search_components )
         IMPORTED_LOCATION ${NetCDF_${_comp}_LIBRARY}
         INTERFACE_INCLUDE_DIRECTORIES "${NetCDF_${_comp}_INCLUDE_DIRS}"
         INTERFACE_LINK_LIBRARIES ${NetCDF_${_comp}_LIBRARIES} )
+      if( NOT _comp MATCHES "^(C)$" )
+        target_link_libraries(NetCDF::NetCDF_${_comp} INTERFACE NetCDF::NetCDF_C)
+      endif()
+      if(MPI_${_comp}_FOUND)
+        target_link_libraries(NetCDF::NetCDF_${_comp} INTERFACE MPI::MPI_${_comp})
+      endif()
     endif()
   endif()
 endforeach()
@@ -263,17 +283,6 @@ if (NetCDF_INCLUDE_DIRS)
     endforeach()
   endif()
 endif ()
-
-## Detect additional package properties
-netcdf_config(${NetCDF_C_CONFIG_EXECUTABLE} --has-parallel4 _val)
-if( NOT _val MATCHES "^(yes|no)$" )
-  netcdf_config(${NetCDF_C_CONFIG_EXECUTABLE} --has-parallel _val)
-endif()
-if( _val MATCHES "^(yes)$" )
-  set(NetCDF_PARALLEL TRUE CACHE STRING "NetCDF has parallel IO capability via pnetcdf or hdf5." FORCE)
-else()
-  set(NetCDF_PARALLEL FALSE CACHE STRING "NetCDF has no parallel IO capability." FORCE)
-endif()
 
 ## Finalize find_package
 include(FindPackageHandleStandardArgs)
