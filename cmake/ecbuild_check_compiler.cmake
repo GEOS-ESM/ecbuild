@@ -65,7 +65,7 @@ endif()
 
 if( CMAKE_COMPILER_IS_GNUCC )
 
-    ecbuild_add_c_flags("-pipe") # use pipe for faster compilation
+    #ecbuild_add_c_flags("-pipe") # use pipe for faster compilation
 
     if( ENABLE_WARNINGS )
         ecbuild_add_c_flags("-Wall")
@@ -77,7 +77,7 @@ endif()
 
 if( CMAKE_COMPILER_IS_GNUCXX )
 
-   ecbuild_add_cxx_flags("-pipe") # use pipe for faster compilation
+   #ecbuild_add_cxx_flags("-pipe") # use pipe for faster compilation
 
     if( ENABLE_WARNINGS )
         ecbuild_add_cxx_flags("-Wall")
