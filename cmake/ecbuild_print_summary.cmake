@@ -26,26 +26,30 @@
 
 macro( ecbuild_print_summary )
 
+  set( project_summary_file )
   if( EXISTS ${PROJECT_SOURCE_DIR}/project_summary.cmake )
+    set( project_summary_file ${PROJECT_SOURCE_DIR}/project_summary.cmake )
+  elseif( EXISTS ${PROJECT_SOURCE_DIR}/cmake/project_summary.cmake )
+    set( project_summary_file ${PROJECT_SOURCE_DIR}/cmake/project_summary.cmake )
+  endif()
+
+  if( project_summary_file )
 
     ecbuild_info( "---------------------------------------------------------" )
     ecbuild_info( "Project ${PROJECT_NAME} summary" )
     ecbuild_info( "---------------------------------------------------------" )
 
-    include( ${PROJECT_SOURCE_DIR}/project_summary.cmake )
+    include( ${project_summary_file} )
 
   endif()
 
   if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
 
     get_property( langs GLOBAL PROPERTY ENABLED_LANGUAGES )
+    list( FILTER langs EXCLUDE REGEX NONE )
 
     ecbuild_info( "---------------------------------------------------------" )
-    if( NOT ${DEVELOPER_MODE} )
-      ecbuild_info( "Build summary" )
-    else()
-      ecbuild_info( "Build summary -- ( DEVELOPER_MODE )" )
-    endif()
+    ecbuild_info( "Build summary" )
     ecbuild_info( "---------------------------------------------------------" )
 
     ecbuild_info( "system : [${BUILD_SITE}] [${CMAKE_SYSTEM}] [${EC_OS_NAME}.${EC_OS_BITS}]" )
@@ -67,27 +71,29 @@ macro( ecbuild_print_summary )
     if( EC_LINK_DIR )
       ecbuild_info( "links prefix     : [${EC_LINK_DIR}]" )
     endif()
-    ecbuild_info( "---------------------------------------------------------" )
 
-    foreach( lang ${langs} )
-      ecbuild_info( "${lang} -- ${CMAKE_${lang}_COMPILER_ID} ${CMAKE_${lang}_COMPILER_VERSION}"  )
-      ecbuild_info( "    compiler   : ${CMAKE_${lang}_COMPILER}" )
-      ecbuild_info( "    flags      : ${CMAKE_${lang}_FLAGS} ${CMAKE_${lang}_FLAGS_${CMAKE_BUILD_TYPE_CAPS}} ${${PNAME}_${lang}_FLAGS} ${${PNAME}_${lang}_FLAGS_${CMAKE_BUILD_TYPE_CAPS}}" )
-      ecbuild_info( "    link flags : ${CMAKE_${lang}_LINK_FLAGS}" )
-    endforeach()
+    if( langs )
+      ecbuild_info( "---------------------------------------------------------" )
+      foreach( lang ${langs} )
+        ecbuild_info( "${lang} -- ${CMAKE_${lang}_COMPILER_ID} ${CMAKE_${lang}_COMPILER_VERSION}"  )
+        ecbuild_info( "    compiler   : ${CMAKE_${lang}_COMPILER}" )
+        ecbuild_info( "    flags      : ${CMAKE_${lang}_FLAGS} ${CMAKE_${lang}_FLAGS_${CMAKE_BUILD_TYPE_CAPS}} ${${PNAME}_${lang}_FLAGS} ${${PNAME}_${lang}_FLAGS_${CMAKE_BUILD_TYPE_CAPS}}" )
+        ecbuild_info( "    link flags : ${CMAKE_${lang}_LINK_FLAGS}" )
+      endforeach()
 
-    ecbuild_info( "linker : ${CMAKE_LINKER}")
-    ecbuild_info( "ar     : ${CMAKE_AR}")
-    ecbuild_info( "ranlib : ${CMAKE_RANLIB}")
-    ecbuild_info( "link flags" )
-    ecbuild_info( "    executable [${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_EXE_LINKER_FLAGS_${CMAKE_BUILD_TYPE_CAPS}}]" )
-    ecbuild_info( "    shared lib [${CMAKE_SHARED_LINKER_FLAGS} ${CMAKE_SHARED_LINKER_FLAGS_${CMAKE_BUILD_TYPE_CAPS}}]" )
-    ecbuild_info( "    static lib [${CMAKE_MODULE_LINKER_FLAGS} ${CMAKE_MODULE_LINKER_FLAGS_${CMAKE_BUILD_TYPE_CAPS}}]" )
-    ecbuild_info( "install rpath  : ${CMAKE_INSTALL_RPATH}" )
+      ecbuild_info( "linker : ${CMAKE_LINKER}")
+      ecbuild_info( "ar     : ${CMAKE_AR}")
+      ecbuild_info( "ranlib : ${CMAKE_RANLIB}")
+      ecbuild_info( "link flags" )
+      ecbuild_info( "    executable [${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_EXE_LINKER_FLAGS_${CMAKE_BUILD_TYPE_CAPS}}]" )
+      ecbuild_info( "    shared lib [${CMAKE_SHARED_LINKER_FLAGS} ${CMAKE_SHARED_LINKER_FLAGS_${CMAKE_BUILD_TYPE_CAPS}}]" )
+      ecbuild_info( "    static lib [${CMAKE_MODULE_LINKER_FLAGS} ${CMAKE_MODULE_LINKER_FLAGS_${CMAKE_BUILD_TYPE_CAPS}}]" )
+      ecbuild_info( "install rpath  : ${CMAKE_INSTALL_RPATH}" )
 
-    get_directory_property( defs COMPILE_DEFINITIONS )
+      get_directory_property( defs COMPILE_DEFINITIONS )
 
-    ecbuild_info( "common definitions: ${defs}" )
+      ecbuild_info( "common definitions: ${defs}" )
+    endif()
 
     ### FEATURE SUMMARY
 
@@ -95,11 +101,7 @@ macro( ecbuild_print_summary )
     ecbuild_info( "Feature summary" )
     ecbuild_info( "---------------------------------------------------------" )
 
-    if( ${CMAKE_VERSION} VERSION_LESS "2.8.6" )
-      set( __what ALL )
-    else()
-      set( __what ALL INCLUDE_QUIET_PACKAGES )
-    endif()
+    set( __what ALL INCLUDE_QUIET_PACKAGES )
 
     # Print feature summary
     feature_summary( WHAT ${__what} )

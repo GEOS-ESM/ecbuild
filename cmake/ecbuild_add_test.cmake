@@ -27,14 +27,17 @@
 #                     [ OMP <number-of-threads-per-mpi-task> ]
 #                     [ ENABLED ON|OFF ]
 #                     [ LIBS <library1> [<library2> ...] ]
+#                     [ NO_AS_NEEDED ]
 #                     [ INCLUDES <path1> [<path2> ...] ]
 #                     [ DEFINITIONS <definition1> [<definition2> ...] ]
 #                     [ PERSISTENT <file1> [<file2> ...] ]
 #                     [ GENERATED <file1> [<file2> ...] ]
 #                     [ DEPENDS <target1> [<target2> ...] ]
 #                     [ TEST_DEPENDS <target1> [<target2> ...] ]
+#                     [ TEST_REQUIRES <target1> [<target2> ...] ]
 #                     [ CONDITION <condition> ]
 #                     [ PROPERTIES <prop1> <val1> [<prop2> <val2> ...] ]
+#                     [ TEST_PROPERTIES <prop1> <val1> [<prop2> <val2> ...] ]
 #                     [ ENVIRONMENT <variable1> [<variable2> ...] ]
 #                     [ WORKING_DIRECTORY <path> ]
 #                     [ CFLAGS <flag1> [<flag2> ...] ]
@@ -105,6 +108,9 @@
 # LIBS : optional
 #   list of libraries to link against (CMake targets or external libraries)
 #
+# NO_AS_NEEDED: optional
+#   add --no-as-needed linker flag, to prevent stripping libraries that looks like are not used
+#
 # INCLUDES : optional
 #   list of paths to add to include directories
 #
@@ -123,12 +129,18 @@
 # TEST_DEPENDS : optional
 #   list of tests to be run before this one
 #
+# TEST_REQUIRES : optional
+#   list of tests that will automatically run before this one
+#
 # CONDITION : optional
 #   conditional expression which must evaluate to true for this target to be
 #   built (must be valid in a CMake ``if`` statement)
 #
 # PROPERTIES : optional
 #   custom properties to set on the target
+#
+# TEST_PROPERTIES : optional
+#   custom properties to set on the test
 #
 # ENVIRONMENT : optional
 #   list of environment variables to set in the test environment
@@ -139,24 +151,49 @@
 # CFLAGS : optional
 #   list of C compiler flags to use for all C source files
 #
+#   See usage note below.
+#
 # CXXFLAGS : optional
 #   list of C++ compiler flags to use for all C++ source files
+#
+#   See usage note below.
 #
 # FFLAGS : optional
 #   list of Fortran compiler flags to use for all Fortran source files
 #
+#   See usage note below.
+#
 # LINKER_LANGUAGE : optional
 #   sets the LINKER_LANGUAGE property on the target
+#
+# Usage
+# -----
+#
+# The ``CFLAGS``, ``CXXFLAGS`` and ``FFLAGS`` options apply the given compiler
+# flags to all C, C++ and Fortran sources passed to this command, respectively.
+# If any two ``ecbuild_add_executable``, ``ecbuild_add_library`` or
+# ``ecbuild_add_test`` commands are passed the *same* source file and each sets
+# a different value for the compiler flags to be applied to that file (including
+# when one command adds flags and another adds none), then the two commands
+# will be in conflict and the result may not be as expected.
+#
+# For this reason it is recommended not to use the ``*FLAGS`` options when
+# multiple targets share the same source files, unless the exact same flags are
+# applied to those sources by each relevant command.
+#
+# Care should also be taken to ensure that these commands are not passed source
+# files which are not required to build the target, if those sources are also
+# passed to other commands which set different compiler flags.
 #
 ##############################################################################
 
 function( ecbuild_add_test )
 
-  set( options           )
+  set( options           NO_AS_NEEDED )
   set( single_value_args TARGET ENABLED COMMAND TYPE LINKER_LANGUAGE MPI OMP WORKING_DIRECTORY )
-  set( multi_value_args  SOURCES OBJECTS LIBS INCLUDES TEST_DEPENDS DEPENDS LABELS ARGS
+  set( multi_value_args  SOURCES OBJECTS LIBS INCLUDES TEST_DEPENDS DEPENDS TEST_REQUIRES LABELS ARGS
                          PERSISTENT DEFINITIONS RESOURCES TEST_DATA CFLAGS
-                         CXXFLAGS FFLAGS GENERATED CONDITION PROPERTIES ENVIRONMENT )
+                         CXXFLAGS FFLAGS GENERATED CONDITION TEST_PROPERTIES PROPERTIES ENVIRONMENT )
 
   cmake_parse_arguments( _PAR "${options}" "${single_value_args}" "${multi_value_args}"  ${_FIRST_ARG} ${ARGN} )
 
@@ -279,7 +316,13 @@ function( ecbuild_add_test )
         list( APPEND _all_objects $<TARGET_OBJECTS:${_obj}> )
       endforeach()
 
-      add_executable( ${_PAR_TARGET} ${_PAR_SOURCES} ${_all_objects} )
+      ecbuild_separate_sources( TARGET ${_PAR_TARGET} SOURCES ${_PAR_SOURCES} )
+
+      if( ${_PAR_TARGET}_cuda_srcs AND CUDA_FOUND )
+        cuda_add_executable( ${_PAR_TARGET} ${_PAR_SOURCES}  ${_all_objects} )
+      else()
+        add_executable( ${_PAR_TARGET} ${_PAR_SOURCES} ${_all_objects} )
+      endif()
 
       # add include dirs if defined
       if( DEFINED _PAR_INCLUDES )
@@ -305,12 +348,13 @@ function( ecbuild_add_test )
         list(REMOVE_ITEM _PAR_LIBS optimized)
         ecbuild_filter_list(LIBS LIST ${_PAR_LIBS} LIST_INCLUDE lib LIST_EXCLUDE skipped_lib)
         ecbuild_debug("ecbuild_add_test(${_PAR_TARGET}): linking with [${lib}]")
-        target_link_libraries( ${_PAR_TARGET} ${lib} )
+        if ( _PAR_NO_AS_NEEDED AND CMAKE_SYSTEM_NAME MATCHES "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU" )
+          target_link_libraries( ${_PAR_TARGET} -Wl,--no-as-needed ${lib} )
+        else()
+          target_link_libraries( ${_PAR_TARGET} ${lib} )
+        endif()
         ecbuild_debug("ecbuild_add_test(${_PAR_TARGET}): [${skipped_lib}] not found - not linking")
       endif()
-
-      # filter sources
-      ecbuild_separate_sources( TARGET ${_PAR_TARGET} SOURCES ${_PAR_SOURCES} )
 
       # Override compilation flags on a per source file basis
       ecbuild_target_flags( ${_PAR_TARGET} "${_PAR_CFLAGS}" "${_PAR_CXXFLAGS}" "${_PAR_FFLAGS}" )
@@ -324,6 +368,20 @@ function( ecbuild_add_test )
         target_compile_definitions(${_PAR_TARGET} PRIVATE ${_PAR_DEFINITIONS})
         ecbuild_debug("ecbuild_add_test(${_PAR_TARGET}): adding definitions ${_PAR_DEFINITIONS}")
       endif()
+
+      # set linker language
+      if( DEFINED _PAR_LINKER_LANGUAGE )
+        ecbuild_debug("ecbuild_add_test(${_PAR_TARGET}): using linker language ${_PAR_LINKER_LANGUAGE}")
+        set_target_properties( ${_PAR_TARGET} PROPERTIES LINKER_LANGUAGE ${_PAR_LINKER_LANGUAGE} )
+        if( ECBUILD_${_PAR_LINKER_LANGUAGE}_IMPLICIT_LINK_LIBRARIES )
+          target_link_libraries( ${_PAR_TARGET} ${ECBUILD_${_PAR_LINKER_LANGUAGE}_IMPLICIT_LINK_LIBRARIES} )
+        endif()
+      endif()
+
+      if( ECBUILD_IMPLICIT_LINK_LIBRARIES )
+        target_link_libraries( ${_PAR_TARGET} ${ECBUILD_IMPLICIT_LINK_LIBRARIES} )
+      endif()
+
 
       # set build location to local build dir
       # not the project base as defined for libs and execs
@@ -375,14 +433,20 @@ function( ecbuild_add_test )
       endif()
 
       # MPI_ARGS is left for users to define @ configure time e.g. -DMPI_ARGS="--oversubscribe"
-      set( _LAUNCH ${MPIEXEC} ${MPI_ARGS} ${MPIEXEC_TASKS} ${MPIEXEC_THREADS} )
+      if( MPI_ARGS )
+        string(REGEX REPLACE "^\"(.*)\"$" "\\1" MPI_ARGS_REMOVED_OUTER_QUOTES ${MPI_ARGS} )
+        string(REPLACE " " ";" MPI_ARGS_LIST ${MPI_ARGS_REMOVED_OUTER_QUOTES})
+      endif()
+      set( _LAUNCH ${MPIEXEC} ${MPI_ARGS_LIST} ${MPIEXEC_TASKS} ${MPIEXEC_THREADS} )
 
-      if( DEFINED _PAR_COMMAND )
-        ecbuild_debug("ecbuild_add_test(${_PAR_TARGET}): running as ${_LAUNCH} ${_PAR_COMMAND}")
-        set( _PAR_COMMAND ${_LAUNCH} ${_PAR_COMMAND} )
+      if( NOT _PAR_COMMAND AND _PAR_TARGET )
+          set( _PAR_COMMAND ${_PAR_TARGET} )
+      endif()
+      ecbuild_debug("ecbuild_add_test(${_PAR_TARGET}): running as ${_LAUNCH} ${_PAR_COMMAND}")
+      if( TARGET ${_PAR_COMMAND} )
+          set( _PAR_COMMAND ${_LAUNCH} $<TARGET_FILE:${_PAR_COMMAND}> )
       else()
-        ecbuild_debug("ecbuild_add_test(${_PAR_TARGET}): running as ${_LAUNCH} ${_TEST_DIR}/${_PAR_TARGET}")
-        set( _PAR_COMMAND ${_LAUNCH} ${_TEST_DIR}/${_PAR_TARGET} )
+          set( _PAR_COMMAND ${_LAUNCH} ${_PAR_COMMAND} )
       endif()
     endif()
 
@@ -407,8 +471,21 @@ function( ecbuild_add_test )
       endif()
 
       # Set custom properties
-      if( ${_PAR_PROPERTIES} )
+      if( DEFINED _PAR_PROPERTIES )
         set_target_properties( ${_PAR_TARGET} PROPERTIES ${_PAR_PROPERTIES} )
+      endif()
+
+      if( DEFINED _PAR_TEST_PROPERTIES )
+        set_tests_properties( ${_PAR_TARGET} PROPERTIES ${_PAR_TEST_PROPERTIES} )
+      endif()
+
+      # Set the fictures properties if test requires another test to run before
+      if ( DEFINED _PAR_TEST_REQUIRES )
+        ecbuild_debug("ecbuild_add_test(${_PAR_TARGET}): set test requirements to ${_PAR_TEST_REQUIRES}")
+        foreach(_requirement ${_PAR_TEST_REQUIRES} )
+          set_tests_properties( ${_requirement} PROPERTIES FIXTURES_SETUP ${_requirement} )
+        endforeach()
+        set_tests_properties( ${_PAR_TARGET} PROPERTIES FIXTURES_REQUIRED "${_PAR_TEST_REQUIRES}" )
       endif()
 
       # get test data
@@ -422,6 +499,7 @@ function( ecbuild_add_test )
       endif()
 
       # Add lower case project name to custom test labels
+      string( TOLOWER ${PROJECT_NAME} PROJECT_NAME_LOWCASE )
       set( _PAR_LABELS ${PROJECT_NAME_LOWCASE} ${_PAR_LABELS} )
       list( REMOVE_DUPLICATES _PAR_LABELS )
       ecbuild_debug("ecbuild_add_test(${_PAR_TARGET}): assign labels ${_PAR_LABELS}")
