@@ -5,62 +5,6 @@
 # In applying this licence, ECMWF does not waive the privileges and immunities
 # granted to it by virtue of its status as an intergovernmental organisation nor
 # does it submit to any jurisdiction.
-#
-# Try to find NetCDF includes and library.
-# Supports static and shared libaries and allows each component to be found in sepearte prefixes.
-#
-# This module defines
-#
-#   - NetCDF_FOUND                - System has NetCDF
-#   - NetCDF_INCLUDE_DIRS         - the NetCDF include directories
-#   - NetCDF_VERSION              - the version of NetCDF
-#   - NetCDF_CONFIG_EXECUTABLE    - the netcdf-config executable if found
-#   - NetCDF_PARALLEL             - Boolean True if NetCDF4 has parallel IO support via hdf5 and/or pnetcdf
-#   - NetCDF_HAS_PNETCDF          - Boolean True if NetCDF4 has pnetcdf support
-#
-# Deprecated Defines
-#   - NetCDF_LIBRARIES            - [Deprecated] Use NetCDF::NetCDF_<LANG> targets instead.
-#
-#
-# Following components are available:
-#
-#   - C                           - C interface to NetCDF          (netcdf)
-#   - CXX                         - CXX4 interface to NetCDF       (netcdf_c++4)
-#   - Fortran                     - Fortran interface to NetCDF    (netcdff)
-#
-# For each component the following are defined:
-#
-#   - NetCDF_<comp>_FOUND         - whether the component is found
-#   - NetCDF_<comp>_LIBRARIES     - the libraries for the component
-#   - NetCDF_<comp>_LIBRARY_SHARED - Boolean is true if libraries for component are shared
-#   - NetCDF_<comp>_INCLUDE_DIRS  - the include directories for specified component
-#   - NetCDF::NetCDF_<comp>       - target of component to be used with target_link_libraries()
-#
-# The following paths will be searched in order if set in CMake (first priority) or environment (second priority)
-#
-#   - NetCDF_ROOT                 - root of NetCDF installation
-#   - NetCDF_PATH                 - root of NetCDF installation
-#
-# The search process begins with locating NetCDF Include headers.  If these are in a non-standard location,
-# set one of the following CMake or environment variables to point to the location:
-#
-#  - NetCDF_INCLUDE_DIR or NetCDF_${comp}_INCLUDE_DIR
-#  - NetCDF_INCLUDE_DIRS or NetCDF_${comp}_INCLUDE_DIR
-#
-# Notes:
-#
-#   - Use "NetCDF::NetCDF_<LANG>" targets only.  NetCDF_LIBRARIES exists for backwards compatibility and should not be used.
-#     - These targets have all the knowledge of include directories and library search directories, and a single
-#       call to target_link_libraries will provide all these transitive properties to your target.  Normally all that is
-#       needed to build and link against NetCDF is, e.g.:
-#           target_link_libraries(my_c_tgt PUBLIC NetCDF::NetCDF_C)
-#   - "NetCDF" is always the preferred naming for this package, its targets, variables, and environment variables
-#     - For compatibility, some variables are also set/checked using alternate names NetCDF4, NETCDF, or NETCDF4
-#     - Environments relying on these older environment variable names should move to using a "NetCDF_ROOT" environment variable
-#   - Preferred component capitalization follows the CMake LANGUAGES variables: i.e., C, Fortran, CXX
-#     - For compatibility, alternate capitalizations are supported but should not be used.
-#   - If no components are defined, all components will be searched
-#
 
 # Try to find NetCDF includes and library
 #
@@ -135,7 +79,6 @@ endforeach()
 if( NOT _search_components )
   set( _search_components C )
 endif()
-set(NetCDF_INCLUDE_DIRS "${NetCDF_INCLUDE_DIRS}" CACHE STRING "NetCDF Include directory paths" FORCE)
 
 ## Search hints for finding include directories and libraries
 foreach( _comp IN ITEMS "" "C" "CXX" "Fortran" "CXX_LEGACY" )
