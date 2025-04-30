@@ -35,19 +35,27 @@ function( ecbuild_generate_config_headers )
 
   cmake_parse_arguments( _p "${options}" "${single_value_args}" "${multi_value_args}"  ${_FIRST_ARG} ${ARGN} )
 
-  if(_PAR_UNPARSED_ARGUMENTS)
-    ecbuild_critical("Unknown keywords given to ecbuild_generate_config_headers(): \"${_PAR_UNPARSED_ARGUMENTS}\"")
+  if(_p_UNPARSED_ARGUMENTS)
+    ecbuild_critical("Unknown keywords given to ecbuild_generate_config_headers(): \"${_p_UNPARSED_ARGUMENTS}\"")
   endif()
 
   # generate list of compiler flags
 
-  string( TOUPPER ${PROJECT_NAME} PNAME )
+  string( TOUPPER ${PROJECT_NAME} PNAME_UPPER )
+  string( MAKE_C_IDENTIFIER "${PNAME_UPPER}" PNAME )
 
   get_property( langs GLOBAL PROPERTY ENABLED_LANGUAGES )
 
   foreach( lang ${langs} )
     set( EC_${lang}_FLAGS "${CMAKE_${lang}_FLAGS} ${CMAKE_${lang}_FLAGS_${CMAKE_BUILD_TYPE_CAPS}}" )
   endforeach()
+
+  # ensure EC_HAVE_FORTRAN is defined for the header generation
+  if(EC_HAVE_FORTRAN)
+    set(EC_HAVE_FORTRAN 1)
+  else()
+    set(EC_HAVE_FORTRAN 0)
+  endif()
 
   configure_file( ${ECBUILD_MACROS_DIR}/ecbuild_config.h.in  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_ecbuild_config.h   )
 

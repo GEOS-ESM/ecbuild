@@ -36,21 +36,10 @@
 # REQUIRED_PACKAGES : optional
 #   list of packages required to be found for this feature to be enabled
 #
-#   The package specification can have one of two forms. Either ::
+#   Every item in the list should be a valid argument list for
+#   ``ecbuild_find_package``, e.g.::
 #
-#     "<package> [ <version> ... ]"
-#
-#   to search for a given package using the CMake ``find_package`` mechanism.
-#   The entire specification must be enclosed in quotes and is passed on
-#   verbatim. Any options of ``find_package`` are supported.
-#
-#   The other specification must start with ``PROJECT`` like this ::
-#
-#     "PROJECT <name> [ VERSION <version> ... ]"
-#
-#   and is used to search for an ecBuild project via ``ecbuild_use_package``.
-#   The entire specification must be enclosed in quotes and is passed on
-#   verbatim. Any options of ``ecbuild_use_package`` are supported.
+#     "NAME <package> [VERSION <version>] [...]"
 #
 #   .. note::
 #
@@ -65,7 +54,7 @@
 #            "grib_api can be used instead (select with -DENABLE_ECCODES=OFF)" )
 #       ecbuild_add_option( FEATURE ECCODES
 #                           DESCRIPTION "Use eccodes instead of grib_api"
-#                           REQUIRED_PACKAGES "PROJECT eccodes REQUIRED FAILURE_MSG ECCODES_FAIL_MSG"
+#                           REQUIRED_PACKAGES "NAME eccodes REQUIRED FAILURE_MSG ECCODES_FAIL_MSG"
 #                           DEFAULT ON )
 #
 # CONDITION : optional
@@ -100,11 +89,7 @@ macro( ecbuild_add_option )
 
   set( options ADVANCED NO_TPL )
   set( single_value_args FEATURE DEFAULT DESCRIPTION TYPE PURPOSE )
-  if( ECBUILD_2_COMPAT )
-    set( multi_value_args REQUIRED_PACKAGES CONDITION )
-  else()
-    set( multi_value_args CONDITION )
-  endif()
+  set( multi_value_args REQUIRED_PACKAGES CONDITION )
 
   cmake_parse_arguments( _p "${options}" "${single_value_args}" "${multi_value_args}"  ${_FIRST_ARG} ${ARGN} )
 
@@ -124,7 +109,7 @@ macro( ecbuild_add_option )
     set( _p_DEFAULT ON )
   else()
     if( NOT _p_DEFAULT MATCHES "[Oo][Nn]" AND NOT _p_DEFAULT MATCHES "[Oo][Ff][Ff]" )
-      ecbuild_critical("In macro ecbuild_add_option(), DEFAULT is either ON or OFF: \"${_p_DEFAULT}\"")
+      ecbuild_critical("In macro ecbuild_add_option(), DEFAULT must be either ON or OFF, but found: \"${_p_DEFAULT}\"")
     endif()
   endif()
   ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): defaults to ${_p_DEFAULT}")
@@ -168,60 +153,113 @@ macro( ecbuild_add_option )
   # define the option -- for cmake GUI
 
   option( ENABLE_${_p_FEATURE} "${_p_DESCRIPTION}" ${_p_DEFAULT} )
-  get_property( _feature_desc GLOBAL PROPERTY _CMAKE_${_p_FEATURE}_DESCRIPTION )
-  if( _feature_desc )
-    add_feature_info( ${_p_FEATURE} ENABLE_${_p_FEATURE} "${_feature_desc}, ${PROJECT_NAME}: ${_p_DESCRIPTION}" )
-  else()
-    add_feature_info( ${_p_FEATURE} ENABLE_${_p_FEATURE} "${PROJECT_NAME}: ${_p_DESCRIPTION}" )
+  # Important: Creating the option, as above, is not enough in multi-project scenarios,
+  # as the variable is not set in case it is already available in the cache.
+  # When the user does not provide an overriding (<project>_)ENABLE_<FEATURE> option,
+  # we must use the provided default value to set ENABLE_<FEATURE>.
+  # This is done without changing any cached value, as it is applicable to the current project only.
+  if ( NOT ${_p_FEATURE}_user_provided_input AND NOT (DEFINED ${PNAME}_ENABLE_${_p_FEATURE}) )
+    set( ENABLE_${_p_FEATURE} ${_p_DEFAULT} )
   endif()
 
   ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): defining option ENABLE_${_p_FEATURE} '${_p_DESCRIPTION}' ${_p_DEFAULT}")
   ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): ENABLE_${_p_FEATURE}=${ENABLE_${_p_FEATURE}}")
 
-  if( ENABLE_${_p_FEATURE} )
-    ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): feature enabled")
+  # Allow override of ENABLE_<FEATURE> with <PNAME>_ENABLE_<FEATURE> (see ECBUILD-486)
+  if( DEFINED ${PNAME}_ENABLE_${_p_FEATURE} )
+    ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): found ${PNAME}_ENABLE_${_p_FEATURE}=${${PNAME}_ENABLE_${_p_FEATURE}}")
+    # Cache it for future reconfiguration
+    set( ${PNAME}_ENABLE_${_p_FEATURE} ${${PNAME}_ENABLE_${_p_FEATURE}} CACHE BOOL "Override for ENABLE_${_p_FEATURE}" )
+    # Warn when user provides both ENABLE_<FEATURE> and <PNAME>_ENABLE_<FEATURE>, and explain precedence
+    if( ${_p_FEATURE}_user_provided_input )
+      ecbuild_warn( "Both ENABLE_${_p_FEATURE} and ${PNAME}_ENABLE_${_p_FEATURE} are set for feature ${_p_FEATURE}."
+                    "Using ${PNAME}_ENABLE_${_p_FEATURE}=${${PNAME}_ENABLE_${_p_FEATURE}}" )
+    endif()
+    # Non-cache (hard) override of ENABLE_<FEATURE> within this project scope only
+    set( ENABLE_${_p_FEATURE} ${${PNAME}_ENABLE_${_p_FEATURE}} )
+    ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): set ENABLE_${_p_FEATURE} from ${PNAME}_ENABLE_${_p_FEATURE}")
+    ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): ENABLE_${_p_FEATURE}=${ENABLE_${_p_FEATURE}}")
+  endif()
 
-    set( HAVE_${_p_FEATURE} 1 )
+  ## Update the description of the feature summary
+  # Choose the correct tick
+  if (ENABLE_${_p_FEATURE})
+    set ( _tick "ON")
+  else()
+    set ( _tick "OFF")
+  endif()
+  set(_enabled "${ENABLE_${_p_FEATURE}}")
+  get_property( _enabled_features GLOBAL PROPERTY ENABLED_FEATURES )
+  if( "${_p_FEATURE}" IN_LIST _enabled_features )
+    set(_enabled ON)
+  endif()
+
+  set( ${PROJECT_NAME}_HAVE_${_p_FEATURE} 0 )
+
+  if( ENABLE_${_p_FEATURE} )
+    ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): feature requested to be enabled")
+
+    set( ${PROJECT_NAME}_HAVE_${_p_FEATURE} 1 )
 
     if( _${_p_FEATURE}_condition )
 
       ### search for dependent packages
 
       set( _failed_to_find_packages )  # clear variable
-      if( ECBUILD_2_COMPAT )
-        if( ECBUILD_2_COMPAT_DEPRECATE AND _p_REQUIRED_PACKAGES )
-          ecbuild_deprecate("Keyword REQUIRED_PACKAGES of ecbuild_add_option is deprecated, "
-            "please include the package and use CONDITION \${package}_FOUND instead")
-        endif()
+      foreach( pkg ${_p_REQUIRED_PACKAGES} )
+        ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): searching for dependent package ${pkg}")
 
-        foreach( pkg ${_p_REQUIRED_PACKAGES} )
-          ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): searching for dependent package ${pkg}")
+        string(REPLACE " " ";" pkglist ${pkg}) # string to list
+
+        list(GET pkglist 0 pkgfirst)
+
+        if( ECBUILD_2_COMPAT )
+
+          if( pkgfirst STREQUAL "PROJECT" )
+            if( ECBUILD_2_COMPAT_DEPRECATE )
+              ecbuild_deprecate("Arguments to ecbuild_add_option(REQUIRED_PACKAGES) "
+                                "should be valid arguments for ecbuild_find_package")
+            endif()
+            list(GET pkglist 1 pkgname)
+          elseif( pkgfirst STREQUAL "NAME" )
+            list(GET pkglist 1 pkgname)
+          else()
+            set(pkgname ${pkgfirst})
+          endif()
 
           if(${_p_NO_TPL})
             set(_no_tpl NO_TPL)
           else()
             set(_no_tpl)
           endif()
+
           ecbuild_compat_require(pkgname ${pkg} ${_no_tpl} FEATURE "${_p_FEATURE}" DESCRIPTION "${_p_DESCRIPTION}")
 
-          # we have feature if all required packages were FOUND
-          if( ${pkgname}_FOUND )
-            ecbuild_info( "Found package ${pkgname} required for feature ${_p_FEATURE}" )
-          else()
-            ecbuild_info( "Could NOT find package ${pkgname} required for feature ${_p_FEATURE} -- ${${pkgname}_HELP_MSG}" )
-            set( HAVE_${_p_FEATURE} 0 )
-            list( APPEND _failed_to_find_packages ${pkgname} )
-          endif()
+        elseif( pkgfirst STREQUAL "NAME" )
+          list(GET pkglist 1 pkgname)
+          ecbuild_find_package(${pkglist})
+        else()
+          set(pkgname ${pkgfirst})
+          ecbuild_find_package(${pkglist})
+        endif()
 
-        endforeach()
-      endif()
+        # we have feature if all required packages were FOUND
+        if( ${pkgname}_FOUND )
+          ecbuild_info( "Found package ${pkgname} required for feature ${_p_FEATURE}" )
+        else()
+          ecbuild_info( "Could NOT find package ${pkgname} required for feature ${_p_FEATURE} -- ${${pkgname}_HELP_MSG}" )
+          set( ${PROJECT_NAME}_HAVE_${_p_FEATURE} 0 )
+          list( APPEND _failed_to_find_packages ${pkgname} )
+        endif()
+
+      endforeach()
     else( _${_p_FEATURE}_condition )
-      set( HAVE_${_p_FEATURE} 0 )
+      set( ${PROJECT_NAME}_HAVE_${_p_FEATURE} 0 )
     endif( _${_p_FEATURE}_condition )
 
     # FINAL CHECK
 
-    if( HAVE_${_p_FEATURE} )
+    if( ${PROJECT_NAME}_HAVE_${_p_FEATURE} )
 
       ecbuild_enable_feature( ${_p_FEATURE} )
 
@@ -229,47 +267,67 @@ macro( ecbuild_add_option )
 
     else() # if user provided input and we cannot satisfy FAIL otherwise WARN
 
-      ecbuild_disable_feature( ${_p_FEATURE} )
+      ecbuild_disable_unused_feature( ${_p_FEATURE} )
 
-      if( ${_p_FEATURE}_user_provided_input )
+      # Determine if a project-specific feature was requested
+      set ( _project_specific_feature_requested OFF )
+      if (DEFINED ${PNAME}_ENABLE_${_p_FEATURE} AND ${PNAME}_ENABLE_${_p_FEATURE} MATCHES "[Oo][Nn]")
+        set ( _project_specific_feature_requested ON )
+      endif()
+
+      if( ${_p_FEATURE}_user_provided_input OR _project_specific_feature_requested )
         if( NOT _${_p_FEATURE}_condition )
           string(REPLACE ";" " " _condition_msg "${_p_CONDITION}")
           ecbuild_critical( "Feature ${_p_FEATURE} cannot be enabled -- following condition was not met: ${_condition_msg}" )
+          set ( _tick "OFF")
         else()
           ecbuild_critical( "Feature ${_p_FEATURE} cannot be enabled -- following required packages weren't found: ${_failed_to_find_packages}" )
+          set ( _tick "OFF")
         endif()
       else()
         if( NOT _${_p_FEATURE}_condition )
           string(REPLACE ";" " " _condition_msg "${_p_CONDITION}")
           ecbuild_info( "Feature ${_p_FEATURE} was not enabled (also not requested) -- following condition was not met: ${_condition_msg}" )
+          set ( _tick "OFF")
         else()
           ecbuild_info( "Feature ${_p_FEATURE} was not enabled (also not requested) -- following required packages weren't found: ${_failed_to_find_packages}" )
+          set ( _tick "OFF")
         endif()
         set( ENABLE_${_p_FEATURE} OFF )
-        ecbuild_disable_feature( ${_p_FEATURE} )
+        ecbuild_disable_unused_feature( ${_p_FEATURE} )
       endif()
 
     endif()
 
   else()
 
-    ecbuild_debug("ecbuild_add_option(${_p_FEATURE}): feature disabled")
-    set( HAVE_${_p_FEATURE} 0 )
-    ecbuild_disable_feature( ${_p_FEATURE} )
+    ecbuild_info( "Feature ${_p_FEATURE} disabled" )
+    set( ${PROJECT_NAME}_HAVE_${_p_FEATURE} 0 )
+    ecbuild_disable_unused_feature( ${_p_FEATURE} )
 
   endif()
 
+  # Retrieve any existing description (n.b. occurs when the same feature is added at multiple projects)
+  set(_enabled "${ENABLE_${_p_FEATURE}}")
+  get_property( _feature_desc GLOBAL PROPERTY _CMAKE_${_p_FEATURE}_DESCRIPTION )
+  # Append the new description
+  if( _feature_desc )
+    add_feature_info( ${_p_FEATURE} ${_enabled} "${_feature_desc}, ${PROJECT_NAME}(${_tick}): '${_p_DESCRIPTION}'" )
+  else()
+    add_feature_info( ${_p_FEATURE} ${_enabled} "${PROJECT_NAME}(${_tick}): '${_p_DESCRIPTION}'" )
+  endif()
 
   if( ${_p_ADVANCED} )
     mark_as_advanced( ENABLE_${_p_FEATURE} )
   endif()
 
-  set( ${PROJECT_NAME}_HAVE_${_p_FEATURE} ${HAVE_${_p_FEATURE}} )
+  set( HAVE_${_p_FEATURE} ${${PROJECT_NAME}_HAVE_${_p_FEATURE}} )
 
   if(ECBUILD_2_COMPAT)
     set(ENABLE_${_p_FEATURE} ${ENABLE_${_p_FEATURE}})
     ecbuild_mark_compat(ENABLE_${_p_FEATURE} "HAVE_${_p_FEATURE} or ${PROJECT_NAME}_HAVE_${_p_FEATURE}")
 
+    string( TOUPPER ${PROJECT_NAME} PROJECT_NAME_CAPS )
     if (NOT "${PROJECT_NAME_CAPS}" STREQUAL "${PROJECT_NAME}")
       ecbuild_declare_compat( ${PROJECT_NAME_CAPS}_HAVE_${_p_FEATURE} ${PROJECT_NAME}_HAVE_${_p_FEATURE})
     endif()
