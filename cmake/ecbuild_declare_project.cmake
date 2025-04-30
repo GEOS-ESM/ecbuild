@@ -31,6 +31,10 @@
 # :INSTALL_DATA_DIR:       relative install directory for data
 # :INSTALL_CMAKE_DIR:      relative install directory for CMake files
 #
+# Generation of the first two variables can be disabled by setting the
+# ECBUILD_RECORD_GIT_COMMIT_SHA1 option to OFF.  This prevents
+# makefiles from being regenerated whenever the Git revision changes.
+#
 # Customising install locations
 # -----------------------------
 #
@@ -69,7 +73,7 @@ if( NOT ${PROJECT_NAME}_DECLARED )
   # if git project get its HEAD SHA1
   # leave it here so we may use ${PROJECT_NAME}_GIT_SHA1 on the version file
 
-  if( EXISTS ${PROJECT_SOURCE_DIR}/.git )
+  if( (${ECBUILD_RECORD_GIT_COMMIT_SHA1}) AND (EXISTS ${PROJECT_SOURCE_DIR}/.git) )
     get_git_head_revision( GIT_REFSPEC ${PROJECT_NAME}_GIT_SHA1 )
     if( ${PROJECT_NAME}_GIT_SHA1 )
       string( SUBSTRING "${${PROJECT_NAME}_GIT_SHA1}" 0 7 ${PROJECT_NAME}_GIT_SHA1_SHORT )
@@ -86,11 +90,7 @@ if( NOT ${PROJECT_NAME}_DECLARED )
   endif()
 
   if(NOT (DEFINED ${PROJECT_NAME}_VERSION
-      AND DEFINED ${PROJECT_NAME}_VERSION_MAJOR
-      AND DEFINED ${PROJECT_NAME}_VERSION_MINOR
-      AND DEFINED ${PROJECT_NAME}_VERSION_PATCH)
-     AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/VERSION.cmake
-    )
+      AND DEFINED ${PROJECT_NAME}_VERSION_MAJOR))
     if(ECBUILD_2_COMPAT)
       if(ECBUILD_2_COMPAT_DEPRECATE)
         ecbuild_deprecate("Please set a project version in the project() rather than using VERSION.cmake:\n\t project( ${PROJECT_NAME} VERSION x.x.x LANGUAGES C CXX Fortran )")
@@ -100,11 +100,9 @@ if( NOT ${PROJECT_NAME}_DECLARED )
 
     else()
 
-      ecbuild_critical("Please define a version for ${PROJECT_NAME}\n\tproject( ${PROJECT_NAME} VERSION 1.1.0 LANGUAGES C CXX )")
+      ecbuild_critical("Please define a version for ${PROJECT_NAME}\n\tproject( ${PROJECT_NAME} VERSION x.x.x LANGUAGES C CXX Fortran )")
 
     endif()
-  elseif( NOT DEFINED ${PROJECT_NAME}_VERSION )
-    ecbuild_warn( "Please set a version in the project statement:\n\t project( ${PROJECT_NAME} VERSION x.x.x LANGUAGES C CXX Fortran )" )
   endif()
   if( NOT DEFINED ${PROJECT_NAME}_VERSION_STR )
     set( ${PROJECT_NAME}_VERSION_STR ${${PROJECT_NAME}_VERSION} )
@@ -120,14 +118,15 @@ if( NOT ${PROJECT_NAME}_DECLARED )
   # install dirs for this project
 
   # Use defaults unless values are already present in cache
+  include(GNUInstallDirs)
   if( NOT INSTALL_BIN_DIR )
-    set( INSTALL_BIN_DIR bin )
+    set( INSTALL_BIN_DIR ${CMAKE_INSTALL_BINDIR} )
   endif()
   if( NOT INSTALL_LIB_DIR )
-    set( INSTALL_LIB_DIR lib )
+    set( INSTALL_LIB_DIR ${CMAKE_INSTALL_LIBDIR} )
   endif()
   if( NOT INSTALL_INCLUDE_DIR )
-    set( INSTALL_INCLUDE_DIR include )
+    set( INSTALL_INCLUDE_DIR ${CMAKE_INSTALL_INCLUDEDIR} )
   endif()
   # INSTALL_DATA_DIR is package specific and needs to be reset for subpackages
   # in a bundle. Users *cannot* override this directory (ECBUILD-315)
@@ -193,6 +192,11 @@ if( NOT ${PROJECT_NAME}_DECLARED )
 
   endif()
 
+  # make sure nothing breaks if INSTALL_LIB_DIR is not lib
+  if( NOT INSTALL_LIB_DIR STREQUAL "lib" AND NOT EXISTS ${CMAKE_BINARY_DIR}/${INSTALL_LIB_DIR} )
+    execute_process( COMMAND ${CMAKE_COMMAND} -E create_symlink lib ${CMAKE_BINARY_DIR}/${INSTALL_LIB_DIR} )
+  endif()
+
   # ecbuild_debug_var( CMAKE_INSTALL_RPATH )
 
   set( PROJECT_TARGETS_FILE "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-targets.cmake" )
@@ -214,5 +218,19 @@ if( NOT ${PROJECT_NAME}_DECLARED )
   endif()
 
 endif()
+
+# Define ${PROJECT_NAME}_DIR in PARENT_SCOPE so that a `find_package( <this-project> )` in a bundle 
+# will easily find the project without requiring a `HINT <this-project>_BINARY_DIR` argument [ECBUILD-460]
+if( NOT CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR )
+    # Guard needed because PARENT_SCOPE cannot be used in top-level CMake project
+    
+    set( ${PROJECT_NAME}_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE )
+endif()
+
+include( ecbuild_setup_test_framework )         # setup test framework
+
+ecbuild_add_option( FEATURE PKGCONFIG
+                    DEFAULT ON
+                    DESCRIPTION "Enable ecbuild_pkgconfig" )
 
 endmacro( ecbuild_declare_project )

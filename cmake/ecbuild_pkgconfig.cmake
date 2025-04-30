@@ -26,7 +26,14 @@ function( _ecbuild_library_dependencies_impl dependencies libraries )
 
       get_property( _type TARGET ${_lib} PROPERTY TYPE )
       if( NOT( "${_type}" STREQUAL "INTERFACE_LIBRARY" ) )
-         list( APPEND _location ${_lib} )
+        list( APPEND _location ${_lib} )
+
+        unset( _deps )
+        get_property( _deps TARGET ${_lib} PROPERTY LINK_LIBRARIES )
+        if( _deps )
+          _ecbuild_library_dependencies_impl( _deps_location _deps )
+          list( APPEND _location ${_deps_location} )
+        endif()
       endif()
 
       unset( _deps )
@@ -139,7 +146,6 @@ function( ecbuild_pkgconfig_libs pkgconfig_libs libraries ignore_libs )
     if( NOT _skip )
         unset( _name )
         unset( _dir  )
-        unset( _file )
 
         if( ${_lib} MATCHES ".+/Frameworks/.+" )
 
@@ -150,7 +156,9 @@ function( ecbuild_pkgconfig_libs pkgconfig_libs libraries ignore_libs )
 
           if( TARGET ${_lib} )
 
-            set( _file "${RPATH_FLAG}$<TARGET_LINKER_FILE_DIR:${_lib}> $<TARGET_LINKER_FILE:${_lib}>" )
+            # XXX: %SHORTEN:...% will be resolved later, see pkg-config.cmake.in
+            set( _name "%SHORTEN:$<TARGET_LINKER_FILE_NAME:${_lib}>%" )
+            set( _dir "$<TARGET_LINKER_FILE_DIR:${_lib}>" )
 
           elseif( ${_lib} MATCHES "-l.+" )
 
@@ -185,10 +193,8 @@ function( ecbuild_pkgconfig_libs pkgconfig_libs libraries ignore_libs )
 
           if( _set_append )
 
-            if( _file )
-              list( APPEND _pkgconfig_libs "${_file}" )
-            elseif( _dir )
-              list( APPEND _pkgconfig_libs "${RPATH_FLAG}${dir}" "-L${_dir}" "-l${_name}" )
+            if( _dir )
+              list( APPEND _pkgconfig_libs "${RPATH_FLAG}${_dir}" "-L${_dir}" "-l${_name}" )
             else()
               list( APPEND _pkgconfig_libs "-l${_name}" )
             endif()
@@ -228,10 +234,15 @@ function( ecbuild_pkgconfig_include INCLUDE INCLUDE_DIRS ignore_includes )
      "\\$<INSTALL_INTERFACE"  # Ignore generator expressions
      ${_ignore_includes}
   )
+  set( ignore_include_dirs_escaped )
+  foreach( _ignore ${ignore_include_dirs} )
+    ecbuild_regex_escape( "${_ignore}" _ignore_escaped )
+    list( APPEND ignore_include_dirs_escaped "${_ignore_escaped}" )
+  endforeach()
 
   foreach( _incdir ${${INCLUDE_DIRS}} )
 
-    foreach( _ignore ${ignore_include_dirs} )
+    foreach( _ignore ${ignore_include_dirs_escaped} )
       if( "${_incdir}" MATCHES "${_ignore}" )
         unset( _incdir )
         break()
@@ -286,10 +297,10 @@ endfunction(ecbuild_pkgconfig_include)
 #
 #   This is useful to create customised pkg-config files.
 #
-# URL : optional, defaults to ``${UPPERCASE_PROJECT_NAME}_URL``
+# URL : optional, defaults to ``${PROJECT_NAME}_URL``
 #   url of the package
 #
-# DESCRIPTION : optional, defaults to ``${UPPERCASE_PROJECT_NAME}_DESCRIPTION``
+# DESCRIPTION : optional, defaults to ``${PROJECT_NAME}_DESCRIPTION``
 #   description of the package
 #
 # LIBRARIES : required
@@ -317,18 +328,18 @@ endfunction(ecbuild_pkgconfig_include)
 # ---------------
 #
 # The following CMake variables are used as default values for some of the
-# options listed above, where ``PNAME`` is the project name in upper case:
+# options listed above:
 #
-# :<PNAME>_DESCRIPTION:  package description
-# :<PNAME>_URL:          package URL
-# :<PNAME>_VERSION:      package version
+# :<PROJECT_NAME>_DESCRIPTION:  package description
+# :<PROJECT_NAME>_URL:          package URL
+# :<PROJECT_NAME>_VERSION:      package version
 # :<PROJECT_NAME>_GIT_SHA1:     Git revision
 #
 # Usage
 # -----
 #
 # It is good practice to provide a separate pkg-config file for each library a
-# package exports. This can be achieved as follows: ::
+# package exports. This can be achieved as follows::
 #
 #   foreach( _lib ${${PNAME}_LIBRARIES} )
 #     if( TARGET ${_lib} )
@@ -342,7 +353,7 @@ endfunction(ecbuild_pkgconfig_include)
 ##############################################################################
 
 function( ecbuild_pkgconfig )
-
+if(HAVE_PKGCONFIG)
   set( options REQUIRES NO_PRIVATE_INCLUDE_DIRS )
   set( single_value_args FILENAME NAME TEMPLATE URL DESCRIPTION )
   set( multi_value_args LIBRARIES IGNORE_INCLUDE_DIRS IGNORE_LIBRARIES VARIABLES LANGUAGES )
@@ -439,12 +450,30 @@ function( ecbuild_pkgconfig )
     set( _PAR_FILENAME "${PKGCONFIG_NAME}.pc" )
   endif()
 
-  set( PKGCONFIG_DESCRIPTION ${${PNAME}_DESCRIPTION} )
+  if( DEFINED ${PROJECT_NAME}_DESCRIPTION )
+    set( PKGCONFIG_DESCRIPTION ${${PROJECT_NAME}_DESCRIPTION} )
+  elseif( DEFINED ${PNAME}_DESCRIPTION )
+    if(ECBUILD_2_COMPAT)
+      if(ECBUILD_2_COMPAT_DEPRECATE AND NOT _PAR_DESCRIPTION)
+        ecbuild_deprecate("${PNAME}_DESCRIPTION is deprecated. Please set ${PROJECT_NAME}_DESCRIPTION.")
+      endif()
+      set( PKGCONFIG_DESCRIPTION ${${PNAME}_DESCRIPTION} )
+    endif()
+  endif()
   if( _PAR_DESCRIPTION )
     set( PKGCONFIG_DESCRIPTION ${_PAR_DESCRIPTION} )
   endif()
 
-  set( PKGCONFIG_URL ${${PNAME}_URL} )
+  if( DEFINED ${PROJECT_NAME}_URL )
+    set( PKGCONFIG_URL ${${PROJECT_NAME}_URL} )
+  elseif( DEFINED ${PNAME}_URL )
+    if(ECBUILD_2_COMPAT)
+      if(ECBUILD_2_COMPAT_DEPRECATE AND NOT _PAR_URL)
+        ecbuild_deprecate("${PNAME}_URL is deprecated. Please set ${PROJECT_NAME}_URL.")
+      endif()
+      set( PKGCONFIG_URL ${${PNAME}_URL} )
+    endif()
+  endif()
   if( _PAR_URL )
     set( PKGCONFIG_URL ${_PAR_URL} )
   endif()
@@ -471,8 +500,8 @@ function( ecbuild_pkgconfig )
       ${CMAKE_CURRENT_BINARY_DIR}/${_PAR_FILENAME}-pkg-config-build.cmake
   )
 
-  install( FILES ${PKGCONFIG_DIR}/${_PAR_FILENAME} DESTINATION lib/pkgconfig )
+  install( FILES ${PKGCONFIG_DIR}/${_PAR_FILENAME} DESTINATION ${INSTALL_LIB_DIR}/pkgconfig )
 
   ecbuild_info( "pkg-config file to be created during build: ${_PAR_FILENAME}" )
-
+endif()
 endfunction(ecbuild_pkgconfig)

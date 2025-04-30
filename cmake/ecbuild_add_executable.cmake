@@ -21,6 +21,7 @@
 #                           [ OBJECTS <obj1> [<obj2> ...] ]
 #                           [ TEMPLATES <template1> [<template2> ...] ]
 #                           [ LIBS <library1> [<library2> ...] ]
+#                           [ NO_AS_NEEDED ]
 #                           [ INCLUDES <path1> [<path2> ...] ]
 #                           [ DEFINITIONS <definition1> [<definition2> ...] ]
 #                           [ PERSISTENT <file1> [<file2> ...] ]
@@ -62,6 +63,9 @@
 # LIBS : optional
 #   list of libraries to link against (CMake targets or external libraries)
 #
+# NO_AS_NEEDED: optional
+#   add --no-as-needed linker flag, to prevent stripping libraries that looks like are not used
+#
 # INCLUDES : optional
 #   list of paths to add to include directories
 #
@@ -96,11 +100,17 @@
 # CFLAGS : optional
 #   list of C compiler flags to use for all C source files
 #
+#   See usage note below.
+#
 # CXXFLAGS : optional
 #   list of C++ compiler flags to use for all C++ source files
 #
+#   See usage note below.
+#
 # FFLAGS : optional
 #   list of Fortran compiler flags to use for all Fortran source files
+#
+#   See usage note below.
 #
 # LINKER_LANGUAGE : optional
 #   sets the LINKER_LANGUAGE property on the target
@@ -108,11 +118,30 @@
 # OUTPUT_NAME : optional
 #   sets the OUTPUT_NAME property on the target
 #
+# Usage
+# -----
+#
+# The ``CFLAGS``, ``CXXFLAGS`` and ``FFLAGS`` options apply the given compiler
+# flags to all C, C++ and Fortran sources passed to this command, respectively.
+# If any two ``ecbuild_add_executable``, ``ecbuild_add_library`` or
+# ``ecbuild_add_test`` commands are passed the *same* source file and each sets
+# a different value for the compiler flags to be applied to that file (including
+# when one command adds flags and another adds none), then the two commands
+# will be in conflict and the result may not be as expected.
+#
+# For this reason it is recommended not to use the ``*FLAGS`` options when
+# multiple targets share the same source files, unless the exact same flags are
+# applied to those sources by each relevant command.
+#
+# Care should also be taken to ensure that these commands are not passed source
+# files which are not required to build the target, if those sources are also
+# passed to other commands which set different compiler flags.
+#
 ##############################################################################
 
 function( ecbuild_add_executable )
 
-  set( options NOINSTALL AUTO_VERSION )
+  set( options NOINSTALL AUTO_VERSION NO_AS_NEEDED )
   set( single_value_args TARGET COMPONENT LINKER_LANGUAGE VERSION OUTPUT_NAME )
   set( multi_value_args SOURCES SOURCES_GLOB SOURCES_EXCLUDE_REGEX OBJECTS
                         TEMPLATES LIBS INCLUDES DEPENDS PERSISTENT DEFINITIONS
@@ -174,20 +203,10 @@ function( ecbuild_add_executable )
       ecbuild_separate_sources( TARGET ${_PAR_TARGET} SOURCES ${_PAR_SOURCES} )
     endif()
 
-    if( ${_PAR_TARGET}_cuda_srcs )
-      if( NOT CUDA_FOUND )
-        ecbuild_error("ecbuild_add_executable(${_PAR_TARGET}): CUDA source files detected"
-                      "but CUDA was not found.")
-      endif()
-      ecbuild_debug("ecbuild_add_executable(${_PAR_TARGET}): CUDA sources detected."
-                    "Building executable with ecbuild_add_executable() rather than intrinsic"
-                    "add_executable().")
-    endif()
-
-    if( NOT ${_PAR_TARGET}_cuda_srcs )
-      add_executable( ${_PAR_TARGET} ${_PAR_SOURCES} ${_all_objects} )
-    else()
+    if( ${_PAR_TARGET}_cuda_srcs AND CUDA_FOUND )
       cuda_add_executable( ${_PAR_TARGET} ${_PAR_SOURCES}  ${_all_objects} )
+    else()
+      add_executable( ${_PAR_TARGET} ${_PAR_SOURCES} ${_all_objects} )
     endif()
 
     # Set custom properties
@@ -223,7 +242,11 @@ function( ecbuild_add_executable )
       list(REMOVE_ITEM _PAR_LIBS debug)
       list(REMOVE_ITEM _PAR_LIBS optimized)
       ecbuild_filter_list(LIBS LIST ${_PAR_LIBS} LIST_INCLUDE lib LIST_EXCLUDE skipped_lib)
-      target_link_libraries( ${_PAR_TARGET} ${lib} )
+      if ( _PAR_NO_AS_NEEDED AND CMAKE_SYSTEM_NAME MATCHES "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU" )
+        target_link_libraries( ${_PAR_TARGET} -Wl,--no-as-needed ${lib} )
+      else()
+        target_link_libraries( ${_PAR_TARGET} ${lib} )
+      endif()
       ecbuild_debug("ecbuild_add_executable(${_PAR_TARGET}): linking with [${lib}]")
       ecbuild_debug("ecbuild_add_executable(${_PAR_TARGET}): [${skipped_lib}] not found - not linking")
     endif()

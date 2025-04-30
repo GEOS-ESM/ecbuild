@@ -26,8 +26,9 @@ endif()
 #                DIR <directory>
 #                URL <giturl>
 #                [ BRANCH <gitbranch> | TAG <gittag> ]
-#                [ UPDATE | NOREMOTE ] )
-#                [ MANUAL ] )
+#                [ UPDATE | NOREMOTE ]
+#                [ MANUAL ]
+#                [ RECURSIVE ] )
 #
 # Options
 # -------
@@ -56,11 +57,14 @@ endif()
 # MANUAL : optional
 #   Do not automatically switch branches or tags
 #
+# RECURSIVE : optional
+#   Do a recursive fetch or update
+#
 ##############################################################################
 
-macro( ecbuild_git )
+function( ecbuild_git )
 
-  set( options UPDATE NOREMOTE MANUAL )
+  set( options UPDATE NOREMOTE MANUAL RECURSIVE )
   set( single_value_args PROJECT DIR URL TAG BRANCH )
   set( multi_value_args )
   cmake_parse_arguments( _PAR "${options}" "${single_value_args}" "${multi_value_args}" ${_FIRST_ARG} ${ARGN} )
@@ -83,6 +87,12 @@ macro( ecbuild_git )
 
     get_filename_component( ABS_PAR_DIR "${_PAR_DIR}" ABSOLUTE )
     get_filename_component( PARENT_DIR  "${_PAR_DIR}/.." ABSOLUTE )
+
+    ### skip if direcory exists but is not a git repo
+    if( EXISTS "${_PAR_DIR}" AND IS_DIRECTORY "${_PAR_DIR}" AND NOT IS_DIRECTORY "${_PAR_DIR}/.git" )
+      ecbuild_info("Found source directory ${_PAR_DIR}. Not a GIT repo -- skipping git operations")
+      return()
+    endif()
 
     ### clone if no directory
 
@@ -161,7 +171,7 @@ macro( ecbuild_git )
                          WORKING_DIRECTORY "${ABS_PAR_DIR}"
                          COMMENT "git pull of branch ${_PAR_BRANCH} on ${_PAR_DIR}" )
 
-      set( git_update_targets "git_update_${_PAR_PROJECT};${git_update_targets}" )
+      set( git_update_targets "git_update_${_PAR_PROJECT};${git_update_targets}" PARENT_SCOPE )
 
     endif()
 
@@ -224,9 +234,18 @@ macro( ecbuild_git )
 
       endif() ####################################################################################
 
+      if( _PAR_RECURSIVE )
+        ecbuild_info("git submodule --quiet update --init --recursive @ ${ABS_PAR_DIR}")
+        execute_process( COMMAND "${GIT_EXECUTABLE}" submodule --quiet update --init --recursive
+                        RESULT_VARIABLE nok ERROR_VARIABLE error
+                        WORKING_DIRECTORY "${ABS_PAR_DIR}")
+        if(nok)
+          ecbuild_critical("git submodule update --init --recursive in ${_PAR_DIR} failed:\n ${error}")
+        endif()
+      endif()
+
     endif( _needs_switch AND IS_DIRECTORY "${_PAR_DIR}/.git" )
 
   endif( ECBUILD_GIT )
 
-endmacro()
-
+endfunction()

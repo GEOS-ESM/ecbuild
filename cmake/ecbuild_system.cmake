@@ -32,7 +32,7 @@ endif()
 ########################################################################################################
 # ecbuild versioning support
 
-set( ECBUILD_CMAKE_MINIMUM "3.6.0" )
+set( ECBUILD_CMAKE_MINIMUM "3.11.0" )
 if( ${CMAKE_VERSION} VERSION_LESS ${ECBUILD_CMAKE_MINIMUM} )
     message(FATAL_ERROR "${PROJECT_NAME} requires at least CMake ${ECBUILD_CMAKE_MINIMUM} -- you are using ${CMAKE_COMMAND} [${CMAKE_VERSION}]\n Please, get a newer version of CMake @ www.cmake.org" )
 endif()
@@ -45,16 +45,21 @@ if( NOT ecbuild_VERSION_STR )
 endif()
 
 # Set policies
-include( ecbuild_policies NO_POLICY_SCOPE )
+if( NOT ( PROJECT_NAME STREQUAL ecbuild ) )
+    include( ecbuild_policies NO_POLICY_SCOPE )
+endif()
 
 # set capitalised project name
 
-string( TOUPPER ${PROJECT_NAME} PROJECT_NAME_CAPS )
-string( TOLOWER ${PROJECT_NAME} PROJECT_NAME_LOWCASE )
+if( ECBUILD_2_COMPAT )
+  string( TOUPPER ${PROJECT_NAME} PROJECT_NAME_CAPS )
+  string( TOLOWER ${PROJECT_NAME} PROJECT_NAME_LOWCASE )
+endif()
 
 ########################################################################################################
-# include our cmake macros, but only do so if this is the top project
-if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
+# include our cmake macros, but only if any parent project is not an ecbuild project
+
+if( NOT ECBUILD_SYSTEM_INITIALISED )
 
     # hostname of where we build
 
@@ -101,11 +106,6 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
 
     ecbuild_info( "---------------------------------------------------------" )
 
-    # add backport support for versions up too 2.8.4
-    if( ${CMAKE_VERSION} VERSION_LESS "2.8" )
-    set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/2.8" ${CMAKE_MODULE_PATH} )
-    endif()
-
     # add extra macros from external contributions
     set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/contrib" )
 
@@ -113,6 +113,11 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
     # define valid build types
 
     include(ecbuild_define_build_types)
+
+    ############################################################################################
+    # define custom properties
+
+    include(ecbuild_define_properties)
 
     ############################################################################################
     # add cmake macros
@@ -131,6 +136,7 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
     include(CheckCSourceRuns)
 
     include(CMakeParseArguments)
+    include(CMakePushCheckState)
 
     # include(CMakePrintSystemInformation) # available in cmake 2.8.4
 
@@ -155,19 +161,12 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
     include(TestBigEndian)
 
     ############################################################################################
-    # backport of cmake > 2.8.4 functions
-
-    if( "${CMAKE_VERSION}" VERSION_LESS "2.8.6" )
-        include( ${CMAKE_CURRENT_LIST_DIR}/2.8/CMakePushCheckState.cmake )
-    else()
-        include(CMakePushCheckState)
-    endif()
-
-    ############################################################################################
     # add our macros
 
     include( ecbuild_evaluate_dynamic_condition )
     include( ecbuild_filter_list )
+
+    include( ecbuild_regex_escape )
     include( ecbuild_parse_version )
 
     include( ecbuild_list_macros )
@@ -193,6 +192,7 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
     include( ecbuild_append_to_rpath )
     include( ecbuild_download_resource )
     include( ecbuild_get_test_data )
+    include( ecbuild_check_urls )
     include( ecbuild_add_c_flags )
     include( ecbuild_add_cxx_flags )
     include( ecbuild_get_cxx11_flags )
@@ -207,8 +207,8 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
     include( ecbuild_generate_project_config )
     include( ecbuild_install_project )
     include( ecbuild_separate_sources )
+    include( ecbuild_find_package_search_hints )
     include( ecbuild_find_package )
-    include( ecbuild_use_package )
     include( ecbuild_print_summary )
     include( ecbuild_warn_unused_files )
     include( ecbuild_find_mpi )
@@ -221,12 +221,15 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
     include( ecbuild_enable_fortran )
     include( ecbuild_source_flags )
     include( ecbuild_target_flags )
-    include( ecbuild_bundle )
+    include( ecbuild_target_fortran_module_directory )
     include( ecbuild_pkgconfig )
     include( ecbuild_cache )
     include( ecbuild_remove_fortran_flags )
     include( ecbuild_configure_file )
 
+    if( NOT (PROJECT_NAME STREQUAL ecbuild) )
+        include( ecbuild_bundle )
+    endif()
 
     include( ${CMAKE_CURRENT_LIST_DIR}/contrib/GetGitRevisionDescription.cmake )
 
@@ -239,13 +242,13 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
 
     ecbuild_prepare_cache()
 
-    include( ecbuild_define_options )               # define build options
-    include( ecbuild_compiler_flags )               # compiler flags
-    include( ecbuild_check_compiler )               # check for compiler characteristics
-    include( ecbuild_check_os )                     # check for os characteristics
+    if( NOT (PROJECT_NAME STREQUAL ecbuild ) )
+        include( ecbuild_define_options )               # define build options
+        include( ecbuild_compiler_flags )               # compiler flags
+        include( ecbuild_check_compiler )               # check for compiler characteristics
+        include( ecbuild_check_os )                     # check for os characteristics
+    endif()
     include( ecbuild_define_paths )                 # defines installation paths
-    include( ecbuild_setup_test_framework )         # setup test framework
-    include( ecbuild_define_uninstall )             # define uninstall target
 
     ecbuild_flush_cache()
 
@@ -254,9 +257,6 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
 
     include(CTest)                 # add cmake testing support
     enable_testing()
-
-    # keep this until we modify the meaning to 'check' if installation worked
-    add_custom_target( check COMMAND ${CMAKE_CTEST_COMMAND} )
 
     ############################################################################################
     # define the build timestamp, unless the user provided one via EC_BUILD_TIMESTAMP
@@ -267,6 +267,8 @@ if( PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME )
     endif()
 
     ecbuild_info( "---------------------------------------------------------" )
+
+    set( ECBUILD_SYSTEM_INITIALISED TRUE )
 
 else()
 
